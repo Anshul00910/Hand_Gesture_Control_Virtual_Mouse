@@ -19,6 +19,11 @@ click_time = 0
 double_click_time = 0
 last_click = 0
 
+# Scroll gesture tracking
+scroll_threshold = 50  # The required distance to trigger a scroll gesture
+scroll_time = 0
+last_scroll_direction = None
+
 while True:
     _, frame = cap.read()
     frame = cv2.flip(frame, 1)
@@ -32,7 +37,7 @@ while True:
             drawing_utils.draw_landmarks(frame, hand, mp.solutions.hands.HAND_CONNECTIONS)
             landmarks = hand.landmark
 
-            index_x, index_y, thumb_x, thumb_y = 0, 0, 0, 0
+            index_x, index_y, thumb_x, thumb_y, middle_x, middle_y = 0, 0, 0, 0, 0, 0
             for id, landmark in enumerate(landmarks):
                 x = int(landmark.x * frame_width)
                 y = int(landmark.y * frame_height)
@@ -47,13 +52,18 @@ while True:
                     thumb_y = screen_height / frame_height * y
                     cv2.circle(frame, (x, y), 10, (0, 0, 255), -1)  # Red circle on thumb tip
 
+                if id == 12:  # Middle finger tip
+                    middle_x = screen_width / frame_width * x
+                    middle_y = screen_height / frame_height * y
+                    cv2.circle(frame, (x, y), 10, (255, 0, 0), -1)  # Blue circle on middle tip
+
             # Cursor movement with smooth transition
             curr_x = prev_x + (index_x - prev_x) / smoothening
             curr_y = prev_y + (index_y - prev_y) / smoothening
             pyautogui.moveTo(curr_x, curr_y)
             prev_x, prev_y = curr_x, curr_y
 
-            # Distance calculations
+            # Distance calculations for clicking
             index_thumb_dist = np.hypot(thumb_x - index_x, thumb_y - index_y)
 
             current_time = time.time()
@@ -71,7 +81,29 @@ while True:
                     pyautogui.doubleClick()
                     double_click_time = current_time
 
-    cv2.imshow('Virtual Mouse', frame)
+            # Detect if both fingers are close and moving vertically for scroll
+            if abs(index_y - middle_y) > scroll_threshold:  # Check vertical distance for scroll
+                if index_y < middle_y:  # Scroll down
+                    pyautogui.scroll(-10)  # Scroll down by 10 units
+                    last_scroll_direction = "down"
+                elif index_y > middle_y:  # Scroll up
+                    pyautogui.scroll(10)  # Scroll up by 10 units
+                    last_scroll_direction = "up"
+
+                # Prevent scrolling too fast
+                if (current_time - scroll_time) > 0.3:
+                    scroll_time = current_time  # Reset scroll time to avoid multiple scrolling
+
+            else:
+                last_scroll_direction = None  # Reset if not in scroll gesture position
+
+            # Show scrolling direction on screen for debugging
+            if last_scroll_direction:
+                cv2.putText(frame, f"Scrolling {last_scroll_direction}", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+    # Display the frame
+    cv2.imshow('Virtual Mouse with Scroll Gesture', frame)
+
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
